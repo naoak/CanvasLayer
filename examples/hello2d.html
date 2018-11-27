@@ -13,7 +13,7 @@
     </style>
 
     <script src="https://maps.googleapis.com/maps/api/js"></script>
-    <script src="../src/CanvasLayer.js"></script>
+    <script src="../dist/CanvasLayer.js"></script>
 
     <script>
       var map;
@@ -52,6 +52,7 @@
           resizeHandler: resize,
           animate: false,
           updateHandler: update,
+          wipeHandler: clearCanvas,
           resolutionScale: resolutionScale
         };
         canvasLayer = new CanvasLayer(canvasLayerOptions);
@@ -70,7 +71,7 @@
 
         // we like our rectangles hideous
         context.fillStyle = 'rgba(230, 77, 26, 1)';
-        
+
         /* We need to scale and translate the map for current view.
          * see https://developers.google.com/maps/documentation/javascript/maptypes#MapCoordinates
          */
@@ -82,7 +83,7 @@
          * it yet.
          */
         context.setTransform(1, 0, 0, 1, 0, 0);
-        
+
         // scale is just 2^zoom
         // If canvasLayer is scaled (with resolutionScale), we need to scale by
         // the same amount to account for the larger canvas.
@@ -94,11 +95,26 @@
          * world coordinate of the topLeft corder to 0,0.
          */
         var offset = mapProjection.fromLatLngToPoint(canvasLayer.getTopLeft());
+        modifyOffset(offset, canvasLayer.getWorldViewPixelWidth());
+
         context.translate(-offset.x, -offset.y);
 
         // project rectLatLng to world coordinates and draw
         var worldPoint = mapProjection.fromLatLngToPoint(rectLatLng);
         context.fillRect(worldPoint.x, worldPoint.y, rectWidth, rectWidth);
+      }
+
+      function modifyOffset(offset, worldViewPixelWidth) {
+        if (offset.x + worldViewPixelWidth >= 256) {
+          offset.x -= 256;
+        }
+        return offset;
+      }
+
+      function clearCanvas() {
+        var canvasWidth = canvasLayer.canvas.width;
+        var canvasHeight = canvasLayer.canvas.height;
+        context.clearRect(0, 0, canvasWidth, canvasHeight);
       }
 
       document.addEventListener('DOMContentLoaded', init, false);

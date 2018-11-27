@@ -5,7 +5,7 @@
     "typescript": "^3.1.6"
   },
   "scripts": {
-    "tsc": "tsc src/",
-    "tsc:watch": "tsc -w src/"
+    "tsc": "tsc",
+    "tsc:watch": "tsc -w"
   }
 }

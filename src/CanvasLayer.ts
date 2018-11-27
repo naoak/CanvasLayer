@@ -14,6 +14,56 @@
  * limitations under the License.
  */
 
+import {} from 'googlemaps';
+
+interface CanvasLayerOptions {
+  /**
+   * If true, updateHandler will be called repeatedly, once per frame. If false,
+   * updateHandler will only be called when a map property changes that could
+   * require the canvas content to be redrawn.
+   */
+  animate?: boolean;
+
+  /**
+   * Map on which to overlay the canvas.
+   */
+  map: google.maps.Map;
+
+  /**
+   * The name of the MapPane in which this layer will be displayed. See
+   * {@code google.maps.MapPanes} for the panes available. Default is
+   * "overlayLayer".
+   */
+  paneName: string;
+
+  /**
+   * A function that is called whenever the canvas has been resized to fit the
+   * map.
+   */
+  resizeHandler?: Function;
+
+  /**
+   * A value for scaling the CanvasLayer resolution relative to the CanvasLayer
+   * display size. This can be used to save computation by scaling the backing
+   * buffer down, or to support high DPI devices by scaling it up (by e.g.
+   * window.devicePixelRatio).
+   */
+  resolutionScale?: number;
+
+  /**
+   * A function that is called when a repaint of the canvas is required.
+   */
+  updateHandler?: Function;
+
+  wipeHandler?: Function;
+}
+
+interface LayoutCanvasOptions {
+  counteractDraggable: boolean;
+  wipe: boolean;
+  force: boolean;
+}
+
 /**
  * @fileoverview Extends OverlayView to provide a canvas "Layer".
  * @author Brendan Kenny, Naoaki Yamada
@@ -27,129 +77,120 @@
  * @extends google.maps.OverlayView
  */
 class CanvasLayer extends google.maps.OverlayView {
-  constructor(options) {
+  canvas: HTMLCanvasElement;
+  zooming: boolean = false;
+
+  /**
+   * If true, canvas is in a map pane and the OverlayView is fully functional.
+   * See google.maps.OverlayView.onAdd for more information.
+   */
+  private _isAdded: boolean = false;
+
+  /**
+   * If true, each update will immediately schedule the next.
+   */
+  private _isAnimated: boolean = false;
+
+  /**
+   * The name of the MapPane in which this layer will be displayed.
+   */
+  private _paneName: string = CanvasLayer.DEFAULT_PANE_NAME;
+
+  /**
+   * A user-supplied function called whenever an update is required. Null or
+   * undefined if a callback is not provided.
+   */
+  private _updateFn?: Function;
+
+  /**
+   * A user-supplied function called whenever an update is required and the
+   * map has been resized since the last update. Null or undefined if a
+   * callback is not provided.
+   */
+  private _resizeFn?: Function;
+
+  private _wipeFn?: Function;
+
+  /**
+   * The LatLng coordinate of the top left of the current view of the map. Will
+   * be null when this._isAdded is false.
+   */
+  private _topLeft?: google.maps.LatLng;
+
+  /**
+   * The map-resize event listener. Will be null when this._isAdded is false.
+   */
+  private _onResizeListener?: google.maps.MapsEventListener | null;
+
+  /**
+   * The map-pan event listener. Will be null when this._isAdded is false. Will
+   * be null when this._isAdded is false.
+   */
+  private _onCenterChangedListener?: google.maps.MapsEventListener | null;
+
+  /**
+   * The map-zoom event listener. Will be null when this._isAdded is false. Will
+   * be null when this._isAdded is false.
+   */
+  private _onZoomChangedListener?: google.maps.MapsEventListener | null;
+
+  /**
+   * The map-idle event listener. Will be null when this._isAdded is false. Will
+   * be null when this._isAdded is false.
+   */
+  private _onIdleListener?: google.maps.MapsEventListener | null;
+
+  /**
+   * If true, the map size has changed and this._resizeFn must be called
+   * on the next update.
+   */
+  private _needsResize: Boolean = true;
+
+  /**
+   * A browser-defined id for the currently requested callback. Null when no
+   * callback is queued.
+   */
+  private _rafUpdateId?: number | null;
+
+  private _rafLayoutId?: number | null;
+
+  /**
+   * The CSS width of the canvas, which may be different than the width of the
+   * backing store.
+   */
+  private _cssWidth?: number;
+
+  /**
+   * The CSS height of the canvas, which may be different than the height of
+   * the backing store.
+   */
+  private _cssHeight?: number;
+
+  /**
+   * A value for scaling the CanvasLayer resolution relative to the CanvasLayer
+   * display size.
+   */
+  private _resolutionScale: number = 1;
+
+  private _worldViewPixelWidth?: number;
+
+  private _center?: google.maps.LatLng;
+  private _prevCenter?: google.maps.LatLng;
+  private _zoom?: number;
+  private _prevZoom?: number;
+
+  constructor(options: CanvasLayerOptions) {
     super();
 
-    /**
-     * If true, canvas is in a map pane and the OverlayView is fully functional.
-     * See google.maps.OverlayView.onAdd for more information.
-     * @type {boolean}
-     * @private
-     */
-    this._isAdded = false;
-
-    /**
-     * If true, each update will immediately schedule the next.
-     * @type {boolean}
-     * @private
-     */
-    this._isAnimated = false;
-
-    /**
-     * The name of the MapPane in which this layer will be displayed.
-     * @type {string}
-     * @private
-     */
-    this._paneName = CanvasLayer.DEFAULT_PANE_NAME;
-
-    /**
-     * A user-supplied function called whenever an update is required. Null or
-     * undefined if a callback is not provided.
-     * @type {?function=}
-     * @private
-     */
-    this._updateFn = null;
-
-    /**
-     * A user-supplied function called whenever an update is required and the
-     * map has been resized since the last update. Null or undefined if a
-     * callback is not provided.
-     * @type {?function}
-     * @private
-     */
-    this._resizeFn = null;
-
-    /**
-     * The LatLng coordinate of the top left of the current view of the map. Will
-     * be null when this._isAdded is false.
-     * @type {google.maps.LatLng}
-     * @private
-     */
-    this._topLeft = null;
-
-    /**
-     * The map-pan event listener. Will be null when this._isAdded is false. Will
-     * be null when this._isAdded is false.
-     * @type {?function}
-     * @private
-     */
-    this._onCenterChangedListener = null;
-
-    /**
-     * The map-idle event listener. Will be null when this._isAdded is false. Will
-     * be null when this._isAdded is false.
-     * @type {?function}
-     * @private
-     */
-    this._onIdleListener = null;
-
-    /**
-     * The map-resize event listener. Will be null when this._isAdded is false.
-     * @type {?function}
-     * @private
-     */
-    this._onResizeListener = null;
-
-    /**
-     * If true, the map size has changed and this._resizeFn must be called
-     * on the next update.
-     * @type {boolean}
-     * @private
-     */
-    this._needsResize = true;
-
-    /**
-     * A browser-defined id for the currently requested callback. Null when no
-     * callback is queued.
-     * @type {?number}
-     * @private
-     */
-    this._rafId = null;
-
-    const canvas = document.createElement('canvas');
+    const canvas: HTMLCanvasElement = document.createElement('canvas');
     canvas.style.position = 'absolute';
-    canvas.style.top = 0;
-    canvas.style.left = 0;
+    canvas.style.top = '0';
+    canvas.style.left = '0';
     canvas.style.pointerEvents = 'none';
-    // canvas.style.border = '1px solid yellow';
-    // canvas.style.boxSizing = 'border-box';
+    canvas.style.border = '1px solid yellow';
+    canvas.style.boxSizing = 'border-box';
 
-    /**
-     * The canvas element.
-     * @type {!HTMLCanvasElement}
-     */
     this.canvas = canvas;
-
-    /**
-     * The CSS width of the canvas, which may be different than the width of the
-     * backing store.
-     * @private {number}
-     */
-    this._cssWidth = null;
-
-    /**
-     * The CSS height of the canvas, which may be different than the height of
-     * the backing store.
-     * @private {number}
-     */
-    this._cssHeight = null;
-
-    /**
-     * A value for scaling the CanvasLayer resolution relative to the CanvasLayer
-     * display size.
-     * @private {number}
-     */
-    this._resolutionScale = 1;
 
     this._onResize = this._onResize.bind(this);
     this._onCenterChanged = this._onCenterChanged.bind(this);
@@ -188,7 +229,7 @@ class CanvasLayer extends google.maps.OverlayView {
    * Sets any options provided. See CanvasLayerOptions for more information.
    * @param {CanvasLayerOptions} options The options to set.
    */
-  setOptions(options) {
+  setOptions(options: CanvasLayerOptions) {
     if (options.animate !== undefined) {
       this.setAnimate(options.animate);
     }
@@ -218,7 +259,7 @@ class CanvasLayer extends google.maps.OverlayView {
    * a map property changes that could require the canvas content to be redrawn.
    * @param {boolean} animate Whether the canvas is animated.
    */
-  setAnimate(animate) {
+  setAnimate(animate: boolean) {
     this._isAnimated = !!animate;
     if (this._isAnimated) {
       this.scheduleUpdate();
@@ -237,7 +278,7 @@ class CanvasLayer extends google.maps.OverlayView {
    * {@code google.maps.MapPanes} for the panes available.
    * @param {string} paneName The name of the desired MapPane.
    */
-  setPaneName(paneName) {
+  setPaneName(paneName: string) {
     this._paneName = paneName;
     this._setPane();
   }
@@ -270,23 +311,12 @@ class CanvasLayer extends google.maps.OverlayView {
   }
 
   /**
-   * Set a function that will be called whenever the parent map and the overlay's
-   * canvas have been resized. If handler is null or unspecified, any
-   * existing callback is removed.
-   * @param {?function=} handler The resize callback function.
-   */
-  setResizeHandler(handler) {
-    this._resizeFn = handler;
-  }
-
-  /**
    * Sets a value for scaling the canvas resolution relative to the canvas
    * display size. This can be used to save computation by scaling the backing
    * buffer down, or to support high DPI devices by scaling it up (by e.g.
    * window.devicePixelRatio).
-   * @param {number} scale
    */
-  setResolutionScale(scale) {
+  setResolutionScale(scale: number) {
     if (typeof scale === 'number') {
       this._resolutionScale = scale;
       this._onResize();
@@ -294,12 +324,20 @@ class CanvasLayer extends google.maps.OverlayView {
   }
 
   /**
+   * Set a function that will be called whenever the parent map and the overlay's
+   * canvas have been resized. If handler is null or unspecified, any
+   * existing callback is removed.
+   */
+  setResizeHandler(handler?: Function) {
+    this._resizeFn = handler;
+  }
+
+  /**
    * Set a function that will be called when a repaint of the canvas is required.
    * If handler is null or unspecified, any existing callback is
    * removed.
-   * @param {?function=} handler The update callback function.
    */
-  setUpdateHandler(handler) {
+  setUpdateHandler(handler?: Function) {
     this._updateFn = handler;
   }
 
@@ -307,10 +345,9 @@ class CanvasLayer extends google.maps.OverlayView {
    * Set a function that will be called when wiping canvas is required.
    * If handler is null or unspecified, any existing callback is
    * removed.
-   * @param {?function=} handler The wipe callback function.
    */
-  setWipeHandler(handler) {
-    this._wipeHandler = handler;
+  setWipeHandler(handler?: Function) {
+    this._wipeFn = handler;
   }
 
   /**
@@ -346,7 +383,7 @@ class CanvasLayer extends google.maps.OverlayView {
     );
 
     this._onResize();
-    this._layoutCanvas();
+    this._scheduleLayoutCanvas();
   }
 
   /**
@@ -358,17 +395,19 @@ class CanvasLayer extends google.maps.OverlayView {
     }
 
     this._isAdded = false;
-    this._topLeft = null;
+    this._topLeft = undefined;
 
     // remove canvas and listeners for pan and resize from map
-    this.canvas.parentElement.removeChild(this.canvas);
-    if (this._zoomListener) {
-      google.maps.event.removeListener(this._zoomListener);
-      this._zoomListener = null;
+    if (this.canvas && this.canvas.parentElement) {
+      this.canvas.parentElement.removeChild(this.canvas);
     }
-    if (this._idleListener) {
-      google.maps.event.removeListener(this._idleListener);
-      this._idleListener = null;
+    if (this._onIdleListener) {
+      google.maps.event.removeListener(this._onIdleListener);
+      this._onIdleListener = null;
+    }
+    if (this._onZoomChangedListener) {
+      google.maps.event.removeListener(this._onZoomChangedListener);
+      this._onZoomChangedListener = null;
     }
     if (this._onCenterChangedListener) {
       google.maps.event.removeListener(this._onCenterChangedListener);
@@ -380,9 +419,13 @@ class CanvasLayer extends google.maps.OverlayView {
     }
 
     // cease canvas update callbacks
-    if (this._rafId) {
-      window.cancelAnimationFrame(this._rafId);
-      this._rafId = null;
+    if (this._rafUpdateId) {
+      window.cancelAnimationFrame(this._rafUpdateId);
+      this._rafUpdateId = null;
+    }
+    if (this._rafLayoutId) {
+      window.cancelAnimationFrame(this._rafLayoutId);
+      this._rafLayoutId = null;
     }
   }
 
@@ -396,9 +439,10 @@ class CanvasLayer extends google.maps.OverlayView {
       return;
     }
 
-    const map = this.getMap();
-    const mapWidth = map.getDiv().offsetWidth;
-    const mapHeight = map.getDiv().offsetHeight;
+    const map = <google.maps.Map>this.getMap();
+    const mapDiv = <HTMLElement>map.getDiv();
+    const mapWidth = mapDiv.offsetWidth;
+    const mapHeight = mapDiv.offsetHeight;
 
     const newWidth = mapWidth * this._resolutionScale;
     const newHeight = mapHeight * this._resolutionScale;
@@ -428,18 +472,21 @@ class CanvasLayer extends google.maps.OverlayView {
    */
   draw() {
     if (this.zooming) {
-      this._layoutCanvas({ counteractDraggable: true });
+      this._scheduleLayoutCanvas(<LayoutCanvasOptions>{
+        counteractDraggable: true
+      });
     }
   }
 
   _onIdle() {
     this.zooming = false;
-    this._layoutCanvas({ wipe: true });
+    this._scheduleLayoutCanvas(<LayoutCanvasOptions>{ wipe: true });
   }
 
   _onCenterChanged() {
+    const map = <google.maps.Map>this.getMap();
     this._prevCenter = this._center;
-    this._center = this.getMap().getCenter();
+    this._center = map.getCenter();
   }
 
   /**
@@ -448,41 +495,39 @@ class CanvasLayer extends google.maps.OverlayView {
    * keep the canvas in place.
    * @private
    */
-  _layoutCanvas(options) {
-    // TODO(bckenny): *should* only be executed on RAF, but in current browsers
-    //     this causes noticeable hitches in map and overlay relative
-    //     positioning.
-
-    const map = this.getMap();
+  _layoutCanvas(options?: LayoutCanvasOptions) {
+    this._rafLayoutId = null;
+    const map = <google.maps.Map>this.getMap();
 
     // topLeft can't be calculated from map.getBounds(), because bounds are
     // clamped to -180 and 180 when completely zoomed out. Instead, calculate
     // left as an offset from the center, which is an unwrapped LatLng.
-    const bounds = map.getBounds();
+    const bounds = <google.maps.LatLngBounds>map.getBounds();
     const top = bounds.getNorthEast().lat();
     const left = bounds.getSouthWest().lng();
     this._zoom = map.getZoom();
     const scale = Math.pow(2, this._zoom);
-    this._worldViewPixelWidth = this._cssWidth / scale;
+    const cssWidth = this._cssWidth || 0;
+    const cssHeight = this._cssHeight || 0;
+    this._worldViewPixelWidth = cssWidth / scale;
     this._topLeft = new google.maps.LatLng(top, left);
 
     // Canvas position relative to draggable map's container depends on
     // overlayView's projection, not the map's. Have to use the center of the
     // map for this, not the top left, for the same reason as above.
     const projection = this.getProjection();
-    const halfW = this._cssWidth / 2;
-    const halfH = this._cssHeight / 2;
+    const halfW = cssWidth / 2;
+    const halfH = cssHeight / 2;
     let offsetX = -Math.round(halfW);
     let offsetY = -Math.round(halfH);
 
     // If draw() is invoked on zooming, counteract draggable container offset.
     const counteractDraggable = options && options.counteractDraggable;
     if (counteractDraggable) {
-      var divCenter = projection.fromLatLngToDivPixel(
-        projection.fromContainerPixelToLatLng({
-          x: halfW,
-          y: halfH
-        })
+      const divCenter = projection.fromLatLngToDivPixel(
+        projection.fromContainerPixelToLatLng(
+          new google.maps.Point(halfW, halfH)
+        )
       );
       offsetX -= divCenter.x;
       offsetY -= divCenter.y;
@@ -490,10 +535,6 @@ class CanvasLayer extends google.maps.OverlayView {
     this.canvas.style[CanvasLayer.CSS_TRANSFORM] =
       'translate(' + offsetX + 'px,' + offsetY + 'px)';
 
-    const wipe = options && options.wipe;
-    if (wipe && this._wipeHandler) {
-      this._wipeHandler();
-    }
     this.scheduleUpdate();
   }
 
@@ -501,7 +542,7 @@ class CanvasLayer extends google.maps.OverlayView {
     this._prevZoom = this._zoom;
     this._zoom = this.getMap().getZoom();
     this.zooming = true;
-    this._layoutCanvas();
+    this._scheduleLayoutCanvas();
   }
 
   /**
@@ -511,7 +552,7 @@ class CanvasLayer extends google.maps.OverlayView {
    * @private
    */
   _update() {
-    this._rafId = null;
+    this._rafUpdateId = null;
     if (!this._isAdded) {
       return;
     }
@@ -545,8 +586,20 @@ class CanvasLayer extends google.maps.OverlayView {
    * already scheduled, there is no effect.
    */
   scheduleUpdate() {
-    if (this._isAdded && !this._rafId) {
-      this._rafId = window.requestAnimationFrame(this._update);
+    if (this._isAdded && !this._rafUpdateId) {
+      this._rafUpdateId = window.requestAnimationFrame(this._update);
+    }
+  }
+
+  _scheduleLayoutCanvas(options?: LayoutCanvasOptions) {
+    if (this._isAdded && !this._rafLayoutId) {
+      const wipe = options && options.wipe;
+      if (wipe && this._wipeFn) {
+        this._wipeFn();
+      }
+      this._rafLayoutId = window.requestAnimationFrame(
+        this._layoutCanvas.bind(this, options)
+      );
     }
   }
 }

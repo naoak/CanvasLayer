@@ -2,10 +2,14 @@
   "name": "CanvasLayer",
   "version": "0.0.0",
   "devDependencies": {
+    "@types/googlemaps": "^3.30.16",
+    "concurrently": "^4.1.0",
+    "express": "^4.16.4",
+    "serve-index": "^1.9.1",
     "typescript": "^3.1.6"
   },
   "scripts": {
-    "tsc": "tsc",
-    "tsc:watch": "tsc -w"
+    "start": "concurrently \"node index.js\" \"tsc -w\"",
+    "build": "tsc"
   }
 }

@@ -3,5 +3,9 @@
   "version": "0.0.0",
   "devDependencies": {
     "typescript": "^3.1.6"
+  },
+  "scripts": {
+    "tsc": "tsc src/",
+    "tsc:watch": "tsc -w src/"
   }
 }

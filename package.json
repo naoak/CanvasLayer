@@ -1,0 +1,7 @@
+{
+  "name": "CanvasLayer",
+  "version": "0.0.0",
+  "devDependencies": {
+    "typescript": "^3.1.6"
+  }
+}

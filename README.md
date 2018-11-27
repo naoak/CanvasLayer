@@ -3,7 +3,7 @@ CanvasLayer – A Google Maps API utility library
 A library for adding a `<canvas>` layer to a Google Maps JavaScript API v3 map and a small API for efficiently using it to visualize data using the [2d canvas API](https://developer.mozilla.org/en-US/docs/Web/HTML/Canvas) or [WebGL](http://get.webgl.org/).
 ![Analytics](https://ga-beacon.appspot.com/UA-12846745-20/canvaslayer/readme?pixel)
 
-[Reference documentation](https://brendankenny.github.io/CanvasLayer/docs/reference.html)
+[Reference documentation](https://naoak.github.io/CanvasLayer/docs/reference.html)
 
 ## Live Examples
 
@@ -11,10 +11,10 @@ Two simple examples are provided, demonstrating methods to integrate CanvasLayer
 
 CanvasLayer exposes the raw `<canvas>` DOM element directly, however, so it can be used with *any* library that renders to a `<canvas>` element. See the examples for two possible ways of keeping the rendered content and the underlying map in sync.
 
-[![CanvasLayer WebGL Screenshot](https://brendankenny.github.io/CanvasLayer/screenshot.png)](https://brendankenny.github.io/CanvasLayer/examples/hello_webgl.html)
+[![CanvasLayer WebGL Screenshot](https://naoak.github.io/CanvasLayer/screenshot.png)](https://naoak.github.io/CanvasLayer/examples/hello_webgl.html)
 
-* [Canvas 2d Example](https://brendankenny.github.io/CanvasLayer/examples/hello2d.html)
-* [WebGL Example](https://brendankenny.github.io/CanvasLayer/examples/hello_webgl.html)
+* [Canvas 2d Example](https://naoak.github.io/CanvasLayer/examples/hello2d.html)
+* [WebGL Example](https://naoak.github.io/CanvasLayer/examples/hello_webgl.html)
 
 ## Contributing
 

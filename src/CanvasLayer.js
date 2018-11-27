@@ -111,6 +111,8 @@ function CanvasLayer(opt_options) {
   canvas.style.top = 0;
   canvas.style.left = 0;
   canvas.style.pointerEvents = 'none';
+  // canvas.style.border = '1px solid yellow';
+  // canvas.style.boxSizing = 'border-box';
 
   /**
    * The canvas element.
@@ -123,14 +125,14 @@ function CanvasLayer(opt_options) {
    * backing store.
    * @private {number}
    */
-  this.canvasCssWidth_ = 300;
+  this.canvasCssWidth_ = null;
 
   /**
    * The CSS height of the canvas, which may be different than the height of
    * the backing store.
    * @private {number}
    */
-  this.canvasCssHeight_ = 150;
+  this.canvasCssHeight_ = null;
 
   /**
    * A value for scaling the CanvasLayer resolution relative to the CanvasLayer
@@ -148,25 +150,14 @@ function CanvasLayer(opt_options) {
     return function() { func.apply(thisArg); };
   }
 
-  /**
-   * A reference to this.repositionCanvas_ with this bound as its this value.
-   * @type {function}
-   * @private
-   */
-  this.repositionFunction_ = simpleBindShim(this, this.repositionCanvas_);
-
-  /**
-   * A reference to this.resize_ with this bound as its this value.
-   * @type {function}
-   * @private
-   */
   this.resizeFunction_ = simpleBindShim(this, this.resize_);
 
-  /**
-   * A reference to this.update_ with this bound as its this value.
-   * @type {function}
-   * @private
-   */
+  this.centerFunction_ = simpleBindShim(this, this.center_);
+
+  this.idleFunction_ = simpleBindShim(this, this.idle_);
+
+  this.zoomFunction_ = simpleBindShim(this, this.zoom_);
+
   this.requestUpdateFunction_ = simpleBindShim(this, this.update_);
 
   // set provided options, if any
@@ -262,6 +253,10 @@ CanvasLayer.prototype.setOptions = function(options) {
 
   if (options.updateHandler !== undefined) {
     this.setUpdateHandler(options.updateHandler);
+  }
+
+  if (options.wipeHandler !== undefined) {
+    this.setWipeHandler(options.wipeHandler);
   }
 
   if (options.resizeHandler !== undefined) {
@@ -370,6 +365,10 @@ CanvasLayer.prototype.setUpdateHandler = function(opt_updateHandler) {
   this.updateHandler_ = opt_updateHandler;
 };
 
+CanvasLayer.prototype.setWipeHandler = function(wipeHandler) {
+  this.wipeHandler_ = wipeHandler;
+};
+
 /**
  * @inheritDoc
  */
@@ -384,7 +383,11 @@ CanvasLayer.prototype.onAdd = function() {
   this.resizeListener_ = google.maps.event.addListener(this.getMap(),
       'resize', this.resizeFunction_);
   this.centerListener_ = google.maps.event.addListener(this.getMap(),
-      'center_changed', this.repositionFunction_);
+      'center_changed', this.centerFunction_);
+  this.idleListener_ = google.maps.event.addListener(this.getMap(),
+      'idle', this.idleFunction_);
+  this.zoomListener_ = google.maps.event.addListener(this.getMap(),
+      'zoom_changed', this.zoomFunction_);
 
   this.resize_();
   this.repositionCanvas_();
@@ -403,6 +406,14 @@ CanvasLayer.prototype.onRemove = function() {
 
   // remove canvas and listeners for pan and resize from map
   this.canvas.parentElement.removeChild(this.canvas);
+  if (this.zoomListener_) {
+    google.maps.event.removeListener(this.zoomListener_);
+    this.zoomListener_ = null;
+  }
+  if (this.idleListener_) {
+    google.maps.event.removeListener(this.idleListener_);
+    this.idleListener_ = null;
+  }
   if (this.centerListener_) {
     google.maps.event.removeListener(this.centerListener_);
     this.centerListener_ = null;
@@ -461,7 +472,19 @@ CanvasLayer.prototype.resize_ = function() {
  * @inheritDoc
  */
 CanvasLayer.prototype.draw = function() {
-  this.repositionCanvas_();
+  if (this.zooming) {
+    this.repositionCanvas_({counteractDraggable: true});
+  }
+};
+
+CanvasLayer.prototype.idle_ = function() {
+  this.zooming = false;
+  this.repositionCanvas_({wipe: true});
+};
+
+CanvasLayer.prototype.center_ = function(e) {
+  this._prevCenter = this._center;
+  this._center = this.getMap().getCenter();
 };
 
 /**
@@ -470,7 +493,7 @@ CanvasLayer.prototype.draw = function() {
  * keep the canvas in place.
  * @private
  */
-CanvasLayer.prototype.repositionCanvas_ = function() {
+CanvasLayer.prototype.repositionCanvas_ = function(options) {
   // TODO(bckenny): *should* only be executed on RAF, but in current browsers
   //     this causes noticeable hitches in map and overlay relative
   //     positioning.
@@ -480,10 +503,13 @@ CanvasLayer.prototype.repositionCanvas_ = function() {
   // topLeft can't be calculated from map.getBounds(), because bounds are
   // clamped to -180 and 180 when completely zoomed out. Instead, calculate
   // left as an offset from the center, which is an unwrapped LatLng.
-  var top = map.getBounds().getNorthEast().lat();
-  var center = map.getCenter();
-  var scale = Math.pow(2, map.getZoom());
-  var left = center.lng() - (this.canvasCssWidth_ * 180) / (256 * scale);
+  var bounds = map.getBounds();
+  var top = bounds.getNorthEast().lat();
+  var center = this._center = map.getCenter();
+  this._zoom = map.getZoom();
+  var scale = Math.pow(2, this._zoom);
+  var left = bounds.getSouthWest().lng();
+  this.worldViewPixelWidth_ = this.canvasCssWidth_ / scale;
   this.topLeft_ = new google.maps.LatLng(top, left);
 
   // Canvas position relative to draggable map's container depends on
@@ -492,18 +518,34 @@ CanvasLayer.prototype.repositionCanvas_ = function() {
   var projection = this.getProjection();
   var halfW = this.canvasCssWidth_ / 2;
   var halfH = this.canvasCssHeight_ / 2;
-  var divCenter = projection.fromLatLngToDivPixel(
-    projection.fromContainerPixelToLatLng({
-      x: halfW,
-      y: halfH
-    })
-  );
-  var offsetX = -Math.round(halfW - divCenter.x);
-  var offsetY = -Math.round(halfH - divCenter.y);
+  var offsetX = -Math.round(halfW);
+  var offsetY = -Math.round(halfH);
+  var counteractDraggable = options && options.counteractDraggable;
+  if (counteractDraggable) {
+    var divCenter = projection.fromLatLngToDivPixel(
+      projection.fromContainerPixelToLatLng({
+        x: halfW,
+        y: halfH
+      })
+    );
+    offsetX -= divCenter.x;
+    offsetY -= divCenter.y;
+  }
   this.canvas.style[CanvasLayer.CSS_TRANSFORM_] = 'translate(' +
       offsetX + 'px,' + offsetY + 'px)';
 
+  var wipe = options && options.wipe;
+  if (wipe && this.wipeHandler_) {
+    this.wipeHandler_();
+  }
   this.scheduleUpdate();
+};
+
+CanvasLayer.prototype.zoom_ = function(e) {
+  this._prevZoom = this._zoom;
+  this._zoom = this.getMap().getZoom();
+  this.zooming = true;
+  this.repositionCanvas_();
 };
 
 /**
@@ -540,6 +582,10 @@ CanvasLayer.prototype.update_ = function() {
  */
 CanvasLayer.prototype.getTopLeft = function() {
   return this.topLeft_;
+};
+
+CanvasLayer.prototype.getWorldViewPixelWidth = function() {
+  return this.worldViewPixelWidth_;
 };
 
 /**

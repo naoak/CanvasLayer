@@ -61,6 +61,7 @@
           resizeHandler: resize,
           animate: false,
           updateHandler: update,
+          wipeHandler: clearCanvas,
           resolutionScale: resolutionScale
         };
         canvasLayer = new CanvasLayer(canvasLayerOptions);
@@ -173,7 +174,7 @@
          * 2. Scale and translate to take world coordinates to pixel coords
          * see https://developers.google.com/maps/documentation/javascript/maptypes#MapCoordinate
          */
-        
+
         // copy pixel->webgl matrix
         mapMatrix.set(pixelsToWebGLMatrix);
 
@@ -182,7 +183,10 @@
         scaleMatrix(mapMatrix, scale, scale);
 
         // translate to current view (vector from topLeft to 0,0)
-        var offset = mapProjection.fromLatLngToPoint(canvasLayer.getTopLeft());
+        var topLeft = canvasLayer.getTopLeft();
+        var offset = mapProjection.fromLatLngToPoint(topLeft);
+        modifyOffset(offset, canvasLayer.getWorldViewPixelWidth());
+
         translateMatrix(mapMatrix, -offset.x, -offset.y);
 
         // attach matrix value to 'mapMatrix' uniform in shader
@@ -191,6 +195,17 @@
 
         // draw!
         gl.drawArrays(gl.POINTS, 0, POINT_COUNT);
+      }
+
+      function modifyOffset(offset, worldViewPixelWidth) {
+        if (offset.x + worldViewPixelWidth >= 256) {
+          offset.x -= 256;
+        }
+        return offset;
+      }
+
+      function clearCanvas() {
+        gl.clear(gl.COLOR_BUFFER_BIT);
       }
 
       document.addEventListener('DOMContentLoaded', init, false);

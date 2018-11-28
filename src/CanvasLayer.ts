@@ -15,12 +15,6 @@
  *
  * @fileoverview Extends OverlayView to provide a canvas "Layer".
  * @author Brendan Kenny, Naoaki Yamada
- *
- * A map layer that provides a canvas over the slippy map and a callback
- * system for efficient animation. Requires canvas and CSS 2D transform
- * support.
- * @constructor
- * @extends google.maps.OverlayView
  */
 
 import {} from 'googlemaps';
@@ -70,13 +64,7 @@ interface CanvasLayerOptions {
 interface LayoutCanvasOptions {
   counteractDraggable: boolean;
   wipe: boolean;
-  force: boolean;
 }
-
-/**
- * @fileoverview Extends OverlayView to provide a canvas "Layer".
- * @author Brendan Kenny, Naoaki Yamada
- */
 
 /**
  * A map layer that provides a canvas over the slippy map and a callback
@@ -118,6 +106,10 @@ class CanvasLayer extends google.maps.OverlayView {
    */
   private _resizeFn?: Function;
 
+  /**
+   * A user-supplied function called whenever a wiping canvas is required.
+   * Null or undefined if a callback is not provided.
+   */
   private _wipeFn?: Function;
 
   /**
@@ -181,6 +173,9 @@ class CanvasLayer extends google.maps.OverlayView {
    */
   private _resolutionScale: number = 1;
 
+  /**
+   * Canvas pixel width when the world is viewed as 256x256 pixels map.
+   */
   private _worldViewPixelWidth?: number;
 
   private _center?: google.maps.LatLng;
@@ -196,8 +191,10 @@ class CanvasLayer extends google.maps.OverlayView {
     canvas.style.top = '0';
     canvas.style.left = '0';
     canvas.style.pointerEvents = 'none';
-    canvas.style.border = '1px solid yellow';
-    canvas.style.boxSizing = 'border-box';
+
+    // For Debug
+    // canvas.style.border = '1px solid yellow';
+    // canvas.style.boxSizing = 'border-box';
 
     this.canvas = canvas;
 
@@ -438,6 +435,14 @@ class CanvasLayer extends google.maps.OverlayView {
     }
   }
 
+  draw() {
+    if (this.zooming) {
+      this._scheduleLayoutCanvas(<LayoutCanvasOptions>{
+        counteractDraggable: true
+      });
+    }
+  }
+
   /**
    * The internal callback for resize events that resizes the canvas to keep the
    * map properly covered.
@@ -473,17 +478,6 @@ class CanvasLayer extends google.maps.OverlayView {
       this._cssHeight = mapHeight;
       this.canvas.style.width = mapWidth + 'px';
       this.canvas.style.height = mapHeight + 'px';
-    }
-  }
-
-  /**
-   * @inheritDoc
-   */
-  draw() {
-    if (this.zooming) {
-      this._scheduleLayoutCanvas(<LayoutCanvasOptions>{
-        counteractDraggable: true
-      });
     }
   }
 

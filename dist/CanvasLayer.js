@@ -12,8 +12,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
-/**
+ *
  * @fileoverview Extends OverlayView to provide a canvas "Layer".
  * @author Brendan Kenny, Naoaki Yamada
  */
@@ -56,8 +55,9 @@ class CanvasLayer extends google.maps.OverlayView {
         canvas.style.top = '0';
         canvas.style.left = '0';
         canvas.style.pointerEvents = 'none';
-        canvas.style.border = '1px solid yellow';
-        canvas.style.boxSizing = 'border-box';
+        // For Debug
+        // canvas.style.border = '1px solid yellow';
+        // canvas.style.boxSizing = 'border-box';
         this.canvas = canvas;
         this._onResize = this._onResize.bind(this);
         this._onCenterChanged = this._onCenterChanged.bind(this);
@@ -256,6 +256,13 @@ class CanvasLayer extends google.maps.OverlayView {
             this._rafLayoutId = null;
         }
     }
+    draw() {
+        if (this.zooming) {
+            this._scheduleLayoutCanvas({
+                counteractDraggable: true
+            });
+        }
+    }
     /**
      * The internal callback for resize events that resizes the canvas to keep the
      * map properly covered.
@@ -286,16 +293,6 @@ class CanvasLayer extends google.maps.OverlayView {
             this._cssHeight = mapHeight;
             this.canvas.style.width = mapWidth + 'px';
             this.canvas.style.height = mapHeight + 'px';
-        }
-    }
-    /**
-     * @inheritDoc
-     */
-    draw() {
-        if (this.zooming) {
-            this._scheduleLayoutCanvas({
-                counteractDraggable: true
-            });
         }
     }
     _onIdle() {

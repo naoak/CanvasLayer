@@ -12,6 +12,15 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * @fileoverview Extends OverlayView to provide a canvas "Layer".
+ * @author Brendan Kenny, Naoaki Yamada
+ *
+ * A map layer that provides a canvas over the slippy map and a callback
+ * system for efficient animation. Requires canvas and CSS 2D transform
+ * support.
+ * @constructor
+ * @extends google.maps.OverlayView
  */
 
 import {} from 'googlemaps';
